@@ -24,15 +24,16 @@ jobs:
         # Создаем директорию для kubeconfig
         mkdir -p ~/.kube
         
-        # Копируем kubeconfig с control plane
-        scp -o StrictHostKeyChecking=no sttewie@10.10.100.131:/etc/rancher/k3s/k3s.yaml ~/.kube/config
+        # Копируем k3s.yaml из домашней директории control plane
+        scp -o StrictHostKeyChecking=no sttewie@10.10.100.131:~/k3s.yaml ~/.kube/config
         
-        # Устанавливаем kubectl если нет
-        if ! command -v kubectl &> /dev/null; then
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
-        fi
+        # Устанавливаем kubectl
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+        
+        # Проверяем установку
+        kubectl version --client
         
     - name: Deploy to Kubernetes
       run: |
