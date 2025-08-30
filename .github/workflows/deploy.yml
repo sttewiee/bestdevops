@@ -17,8 +17,62 @@ jobs:
     - name: Build Docker image
       run: |
         docker build -t devops-app:latest .
+        docker tag devops-app:latest devops-app:${{ github.sha }}
+        
+    - name: Setup Kubernetes access
+      run: |
+        # Создаем директорию для kubeconfig
+        mkdir -p ~/.kube
+        
+        # Копируем kubeconfig с control plane
+        scp -o StrictHostKeyChecking=no sttewie@10.10.100.131:/etc/rancher/k3s/k3s.yaml ~/.kube/config
+        
+        # Устанавливаем kubectl если нет
+        if ! command -v kubectl &> /dev/null; then
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+        fi
         
     - name: Deploy to Kubernetes
       run: |
-        # Здесь будут команды деплоя в K8s
-        echo "Deploying to Kubernetes cluster..."
+        # Проверяем подключение к кластеру
+        kubectl cluster-info
+        kubectl get nodes
+        
+        # Создаем namespace если нет
+        kubectl create namespace devops-lab --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Деплоим приложение
+        kubectl apply -f k8s/ -n devops-lab
+        
+    - name: Verify deployment
+      run: |
+        # Ждем готовности подов
+        kubectl wait --for=condition=ready pod -l app=devops-app -n devops-lab --timeout=300s
+        
+        # Показываем статус
+        kubectl get pods -n devops-lab
+        kubectl get services -n devops-lab
+        kubectl get ingress -n devops-lab
+        
+    - name: Health check
+      run: |
+        # Получаем IP сервиса
+        SERVICE_IP=$(kubectl get service devops-app -n devops-lab -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        if [ -z "$SERVICE_IP" ]; then
+          SERVICE_IP=$(kubectl get service devops-app -n devops-lab -o jsonpath='{.spec.clusterIP}')
+        fi
+        
+        # Проверяем health endpoint
+        if [ ! -z "$SERVICE_IP" ]; then
+          echo "Testing health endpoint at $SERVICE_IP:3000"
+          curl -f http://$SERVICE_IP:3000/health || echo "Health check failed"
+        fi
+        
+    - name: Rollback on failure
+      if: failure()
+      run: |
+        echo "Deployment failed, rolling back..."
+        kubectl rollout undo deployment/devops-app -n devops-lab
+        kubectl get pods -n devops-lab
