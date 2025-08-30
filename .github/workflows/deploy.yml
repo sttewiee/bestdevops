@@ -27,6 +27,9 @@ jobs:
         # Копируем k3s.yaml из домашней директории control plane
         scp -o StrictHostKeyChecking=no sttewie@10.10.100.131:~/k3s.yaml ~/.kube/config
         
+        # Исправляем IP адрес в kubeconfig (на всякий случай)
+        sed -i 's|127.0.0.1|10.10.100.131|g' ~/.kube/config
+        
         # Устанавливаем kubectl
         curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
         chmod +x kubectl
