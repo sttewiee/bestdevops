@@ -33,6 +33,13 @@ jobs:
         # Проверяем установку
         kubectl version --client
         
+    - name: Configure Docker for insecure registry
+      run: |
+        # Настраиваем Docker для работы с insecure registry
+        echo '{"insecure-registries": ["10.10.100.131:5000"]}' | sudo tee /etc/docker/daemon.json
+        sudo systemctl restart docker
+        sleep 10  # Ждем перезапуска Docker
+        
     - name: Build and push Docker image
       run: |
         # Собираем образ локально
