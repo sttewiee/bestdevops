@@ -14,10 +14,11 @@ spec:
       labels:
         app: devops-app
     spec:
+      serviceAccountName: devops-app-sa
       containers:
       - name: devops-app
-        image: 10.10.100.127:5000/devops-app:latest  # ← Изменяем это!
-        imagePullPolicy: Always
+        image: devops-app:latest  # ← Используем локально собранный образ
+        imagePullPolicy: Never   # ← Не пытаемся загружать из registry
         ports:
         - containerPort: 3000
         env:
@@ -25,6 +26,21 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: devops-app-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: devops-app-config
+              key: PORT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: devops-app-config
+              key: LOG_LEVEL
         resources:
           requests:
             memory: "64Mi"
