@@ -33,10 +33,21 @@ jobs:
         # Проверяем установку
         kubectl version --client
         
-    - name: Build Docker image on control plane
+    - name: Build and push Docker image
       run: |
-        # Собираем образ на control plane через SSH
-        ssh -o StrictHostKeyChecking=no sttewie@10.10.100.131 "cd /tmp && git clone https://github.com/sttewiee/bestdevops.git && cd bestdevops && docker build -t devops-app:latest . && docker tag devops-app:latest devops-app:${{ github.sha }} && echo 'Docker image built successfully on control plane'"
+        # Собираем образ локально
+        docker build -t devops-app:latest .
+        docker tag devops-app:latest devops-app:${{ github.sha }}
+        
+        # Тегируем для registry
+        docker tag devops-app:latest 10.10.100.131:5000/devops-app:latest
+        docker tag devops-app:${{ github.sha }} 10.10.100.131:5000/devops-app:${{ github.sha }}
+        
+        # Пушим в registry
+        docker push 10.10.100.131:5000/devops-app:latest
+        docker push 10.10.100.131:5000/devops-app:${{ github.sha }}
+        
+        echo "✅ Docker образ собран и запушен в registry"
         
     - name: Deploy to Kubernetes
       run: |
