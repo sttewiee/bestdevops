@@ -14,5 +14,3 @@ metadata:
   namespace: devops-lab
   labels:
     app: devops-app
-imagePullSecrets:
-- name: registry-secret

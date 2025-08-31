@@ -15,12 +15,10 @@ spec:
         app: devops-app
     spec:
       serviceAccountName: devops-app-sa
-      imagePullSecrets:
-      - name: registry-secret
       containers:
       - name: devops-app
-        image: 10.10.100.131:5000/devops-app:latest  # ← Используем образ из registry
-        imagePullPolicy: Always   # ← Всегда загружаем из registry
+        image: devops-app:latest  # ← Используем локальный образ на control plane
+        imagePullPolicy: Never   # ← Не пытаемся загружать из registry
         ports:
         - containerPort: 3000
         env:
