@@ -5,11 +5,3 @@ metadata:
   labels:
     name: devops-lab
     purpose: devops-education
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: devops-app-sa
-  namespace: devops-lab
-  labels:
-    app: devops-app
