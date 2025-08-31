@@ -15,6 +15,8 @@ spec:
         app: devops-app
     spec:
       serviceAccountName: devops-app-sa
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""  # Запускаем на control plane узле
       containers:
       - name: devops-app
         image: devops-app:latest  # ← Используем локальный образ на control plane
