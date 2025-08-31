@@ -33,11 +33,6 @@ jobs:
         # Проверяем установку
         kubectl version --client
         
-    - name: Build image using Docker on control plane
-      run: |
-        # Собираем образ используя Docker на control plane
-        ssh -o StrictHostKeyChecking=no sttewie@10.10.100.131 "cd /tmp && rm -rf bestdevops && git clone https://github.com/sttewiee/bestdevops.git && cd bestdevops && docker build -t devops-app:latest . && echo '✅ Docker образ собран на control plane'"
-        
     - name: Deploy to Kubernetes
       run: |
         # Проверяем подключение к кластеру
@@ -49,6 +44,19 @@ jobs:
         
         # Деплоим приложение
         kubectl apply -f k8s/ -n devops-lab
+        
+    - name: Build image using Kubernetes Job
+      run: |
+        # Запускаем Job для сборки образа
+        kubectl apply -f k8s/build-job.yaml -n devops-lab
+        
+        # Ждем завершения сборки
+        kubectl wait --for=condition=complete job/build-devops-app -n devops-lab --timeout=600s
+        
+        # Показываем логи сборки
+        kubectl logs job/build-devops-app -n devops-lab
+        
+        echo "✅ Docker образ собран в Kubernetes кластере"
         
     - name: Verify deployment
       run: |

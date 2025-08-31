@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-devops-app
+  namespace: devops-lab
+spec:
+  template:
+    spec:
+      serviceAccountName: devops-app-sa
+      containers:
+      - name: build
+        image: docker:20.10-dind
+        command: ["sh"]
+        args:
+        - -c
+        - |
+          # Ждем запуска Docker daemon
+          sleep 10
+          
+          # Клонируем репозиторий
+          apk add --no-cache git
+          git clone https://github.com/sttewiee/bestdevops.git
+          cd bestdevops
+          
+          # Собираем образ
+          docker build -t devops-app:latest .
+          echo "✅ Docker образ собран успешно"
+          
+          # Сохраняем образ в tar файл для передачи
+          docker save devops-app:latest > /tmp/devops-app.tar
+          echo "✅ Образ сохранен в tar файл"
+        env:
+        - name: DOCKER_HOST
+          value: "tcp://localhost:2375"
+        - name: DOCKER_DRIVER
+          value: "overlay2"
+        - name: DOCKER_TLS_CERTDIR
+          value: ""
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: docker-sock
+          mountPath: /var/run/docker.sock
+        - name: shared-volume
+          mountPath: /shared
+      volumes:
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
+      - name: shared-volume
+        emptyDir: {}
+      restartPolicy: Never
+  backoffLimit: 3
