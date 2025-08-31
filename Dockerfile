@@ -32,9 +32,6 @@ COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 # Копирование исходного кода
 COPY --from=builder --chown=nodejs:nodejs /app/src ./src
 
-# Копирование package.json
-COPY --from=builder --chown=nodejs:nodejs package*.json ./
-
 # Переключение на пользователя nodejs
 USER nodejs
 
