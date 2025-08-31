@@ -8,13 +8,16 @@ WORKDIR /app
 COPY package*.json ./
 
 # Установка зависимостей
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --omit=dev && npm cache clean --force
 
 # Копирование исходного кода
 COPY src/ ./src/
 
 # Финальный образ
 FROM node:18-alpine AS production
+
+# Установка wget для healthcheck
+RUN apk add --no-cache wget
 
 # Создание пользователя для безопасности
 RUN addgroup -g 1001 -S nodejs
