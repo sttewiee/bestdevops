@@ -14,11 +14,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Build Docker image
-      run: |
-        docker build -t devops-app:latest .
-        docker tag devops-app:latest devops-app:${{ github.sha }}
-        
     - name: Setup Kubernetes access
       run: |
         # Создаем директорию для kubeconfig
@@ -37,6 +32,18 @@ jobs:
         
         # Проверяем установку
         kubectl version --client
+        
+    - name: Build Docker image on control plane
+      run: |
+        # Собираем образ на control plane через SSH
+        ssh -o StrictHostKeyChecking=no sttewie@10.10.100.131 << 'EOF'
+          cd /tmp
+          git clone https://github.com/sttewiee/bestdevops.git
+          cd bestdevops
+          docker build -t devops-app:latest .
+          docker tag devops-app:latest devops-app:${{ github.sha }}
+          echo "Docker image built successfully on control plane"
+EOF
         
     - name: Deploy to Kubernetes
       run: |
