@@ -45,23 +45,10 @@ jobs:
         # Деплоим приложение
         kubectl apply -f k8s/ -n devops-lab
         
-    - name: Build image using Kubernetes Job
-      run: |
-        # Запускаем Job для сборки образа
-        kubectl apply -f k8s/build-job.yaml -n devops-lab
-        
-        # Ждем завершения сборки
-        kubectl wait --for=condition=complete job/build-devops-app -n devops-lab --timeout=600s
-        
-        # Показываем логи сборки
-        kubectl logs job/build-devops-app -n devops-lab
-        
-        echo "✅ Docker образ собран в Kubernetes кластере"
-        
     - name: Verify deployment
       run: |
         # Ждем готовности подов
-        kubectl wait --for=condition=ready pod -l app=devops-app -n devops-lab --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=devops-app -n devops-lab --timeout=600s
         
         # Показываем статус
         kubectl get pods -n devops-lab
