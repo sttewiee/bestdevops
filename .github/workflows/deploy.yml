@@ -33,10 +33,10 @@ jobs:
         # Проверяем установку
         kubectl version --client
         
-    - name: Build and deploy on control plane
+    - name: Build image using K3s containerd
       run: |
-        # Собираем образ прямо на control plane через SSH
-        ssh -o StrictHostKeyChecking=no sttewie@10.10.100.131 "cd /tmp && rm -rf bestdevops && git clone https://github.com/sttewiee/bestdevops.git && cd bestdevops && docker build -t devops-app:latest . && echo '✅ Docker образ собран на control plane'"
+        # Собираем образ используя K3s containerd на control plane
+        ssh -o StrictHostKeyChecking=no sttewie@10.10.100.131 "cd /tmp && rm -rf bestdevops && git clone https://github.com/sttewiee/bestdevops.git && cd bestdevops && sudo k3s ctr images build --tag devops-app:latest . && echo '✅ Docker образ собран используя K3s containerd'"
         
     - name: Deploy to Kubernetes
       run: |
