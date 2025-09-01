@@ -1,0 +1,32 @@
+# vSphere connection configuration
+vsphere_user     = "administrator@vsphere.local"
+vsphere_password = "your-vsphere-password"
+vsphere_server   = "192.168.1.100"  # IP адрес вашего vSphere сервера
+
+# SSL configuration
+allow_unverified_ssl = true
+
+# vSphere infrastructure
+datacenter_name = "Datacenter"           # Имя вашего datacenter
+cluster_name    = "Cluster"              # Имя вашего compute cluster
+datastore_name  = "datastore1"           # Имя datastore
+network_name    = "VM Network"           # Имя сети
+template_name   = "ubuntu-template"      # Имя VM шаблона
+vm_folder       = "DevOps-Lab"           # Папка для VM
+
+# SSH configuration
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC..."  # Ваш SSH публичный ключ
+
+# Domain configuration
+domain_name = "devops-lab.local"
+
+# Kubernetes configuration
+k8s_worker_count = 2  # Количество worker узлов
+
+# Resource sizing (опционально, можно оставить по умолчанию)
+management_node_cpu = 2
+management_node_ram = 4096
+cicd_node_cpu       = 4
+cicd_node_ram       = 8192
+k8s_node_cpu        = 4
+k8s_node_ram        = 8192

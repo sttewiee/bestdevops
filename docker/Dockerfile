@@ -8,16 +8,16 @@ WORKDIR /app
 COPY package*.json ./
 
 # Установка зависимостей
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci --only=production && npm cache clean --force
 
 # Копирование исходного кода
 COPY src/ ./src/
 
+# Сборка приложения (если нужно)
+RUN npm run build || echo "No build script found"
+
 # Финальный образ
 FROM node:18-alpine AS production
-
-# Установка wget для healthcheck
-RUN apk add --no-cache wget
 
 # Создание пользователя для безопасности
 RUN addgroup -g 1001 -S nodejs
@@ -32,15 +32,18 @@ COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 # Копирование исходного кода
 COPY --from=builder --chown=nodejs:nodejs /app/src ./src
 
+# Копирование package.json
+COPY --chown=nodejs:nodejs package*.json ./
+
 # Переключение на пользователя nodejs
 USER nodejs
 
 # Открытие порта
-EXPOSE 3000
+EXPOSE 8080
 
 # Проверка здоровья
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD node healthcheck.js || exit 1
 
 # Запуск приложения
 CMD ["node", "src/app.js"]

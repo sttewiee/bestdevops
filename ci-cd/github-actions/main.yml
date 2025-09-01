@@ -1,0 +1,227 @@
+name: DevOps Lab CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'docker/**'
+      - 'kubernetes/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Тестирование
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: |
+        if [ -f "package.json" ]; then
+          npm ci
+        fi
+        
+    - name: Run linting
+      run: |
+        if [ -f "package.json" ]; then
+          npm run lint
+        fi
+        
+    - name: Run tests
+      run: |
+        if [ -f "package.json" ]; then
+          npm test
+        fi
+        
+    - name: Run security audit
+      run: |
+        if [ -f "package.json" ]; then
+          npm audit --audit-level=moderate
+        fi
+
+  # Сборка Docker образа
+  build:
+    name: Build and Push Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # Развертывание в Kubernetes
+  deploy:
+    name: Deploy to Kubernetes
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+        
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+        
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig.yaml
+        export KUBECONFIG=kubeconfig.yaml
+        
+    - name: Deploy to Kubernetes
+      run: |
+        export KUBECONFIG=kubeconfig.yaml
+        
+        # Обновляем образ в deployment
+        kubectl set image deployment/devops-lab-app devops-lab-app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} -n devops-lab
+        
+        # Проверяем статус deployment
+        kubectl rollout status deployment/devops-lab-app -n devops-lab --timeout=300s
+        
+    - name: Verify deployment
+      run: |
+        export KUBECONFIG=kubeconfig.yaml
+        
+        # Проверяем, что поды запущены
+        kubectl get pods -n devops-lab -l app=devops-lab-app
+        
+        # Проверяем сервисы
+        kubectl get svc -n devops-lab
+        
+        # Проверяем ingress
+        kubectl get ingress -n devops-lab
+
+  # Мониторинг и алерты
+  monitoring:
+    name: Monitoring and Alerts
+    needs: deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+        
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig.yaml
+        export KUBECONFIG=kubeconfig.yaml
+        
+    - name: Check application health
+      run: |
+        export KUBECONFIG=kubeconfig.yaml
+        
+        # Проверяем метрики Prometheus
+        kubectl port-forward svc/prometheus-server 9090:9090 -n monitoring &
+        sleep 10
+        
+        # Проверяем доступность приложения
+        kubectl port-forward svc/devops-lab-app 8080:8080 -n devops-lab &
+        sleep 5
+        
+        # Простая проверка здоровья
+        curl -f http://localhost:8080/health || exit 1
+        
+    - name: Send notification
+      if: always()
+      run: |
+        echo "Deployment completed for ${{ github.repository }}"
+        echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"
+        echo "Commit: ${{ github.sha }}"
+        
+        # Здесь можно добавить отправку уведомлений в Slack, Teams и т.д.
+        # curl -X POST -H 'Content-type: application/json' \
+        #   --data '{"text":"Deployment completed!"}' \
+        #   ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Очистка
+  cleanup:
+    name: Cleanup
+    needs: [deploy, monitoring]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Cleanup old images
+      run: |
+        echo "Cleaning up old Docker images..."
+        # Здесь можно добавить логику очистки старых образов
+        
+    - name: Cleanup old deployments
+      run: |
+        echo "Cleaning up old deployments..."
+        # Здесь можно добавить логику очистки старых deployment'ов
