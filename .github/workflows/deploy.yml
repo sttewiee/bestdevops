@@ -57,17 +57,9 @@ jobs:
         
     - name: Health check
       run: |
-        # Получаем IP сервиса
-        SERVICE_IP=$(kubectl get service devops-app -n devops-lab -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-        if [ -z "$SERVICE_IP" ]; then
-          SERVICE_IP=$(kubectl get service devops-app -n devops-lab -o jsonpath='{.spec.clusterIP}')
-        fi
-        
-        # Проверяем health endpoint
-        if [ ! -z "$SERVICE_IP" ]; then
-          echo "Testing health endpoint at $SERVICE_IP:80"
-          curl -f http://$SERVICE_IP:80/health || echo "Health check failed"
-        fi
+        # Проверяем health endpoint через Ingress
+        echo "Testing health endpoint via Ingress"
+        curl -f -H "Host: devops-app.local" http://10.10.100.131:80/ || echo "Health check failed"
         
     - name: Rollback on failure
       if: failure()
