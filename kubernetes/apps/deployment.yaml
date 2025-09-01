@@ -52,7 +52,7 @@ spec:
         image: devops-app:latest  # ← Используем локальный образ
         imagePullPolicy: Never   # ← Не пытаемся загружать из registry
         ports:
-        - containerPort: 3000
+        - containerPort: 8080
         env:
         - name: HOSTNAME
           valueFrom:
@@ -83,13 +83,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 3000
+            port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /health
-            port: 3000
+            port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5
       volumes:

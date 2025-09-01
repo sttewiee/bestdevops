@@ -7,7 +7,7 @@ metadata:
     app: devops-app
 data:
   NODE_ENV: "production"
-  PORT: "3000"
+  PORT: "8080"
   LOG_LEVEL: "info"
   CORS_ORIGIN: "*"
   HEALTH_CHECK_INTERVAL: "30"

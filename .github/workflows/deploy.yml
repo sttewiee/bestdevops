@@ -43,7 +43,7 @@ jobs:
         kubectl create namespace devops-lab --dry-run=client -o yaml | kubectl apply -f -
         
         # Деплоим приложение
-        kubectl apply -f k8s/ -n devops-lab
+        kubectl apply -f kubernetes/apps/ -n devops-lab
         
     - name: Verify deployment
       run: |
@@ -65,8 +65,8 @@ jobs:
         
         # Проверяем health endpoint
         if [ ! -z "$SERVICE_IP" ]; then
-          echo "Testing health endpoint at $SERVICE_IP:3000"
-          curl -f http://$SERVICE_IP:3000/health || echo "Health check failed"
+          echo "Testing health endpoint at $SERVICE_IP:80"
+          curl -f http://$SERVICE_IP:80/health || echo "Health check failed"
         fi
         
     - name: Rollback on failure
