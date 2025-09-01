@@ -15,24 +15,24 @@ spec:
         app: devops-app
     spec:
       serviceAccountName: devops-app-sa
-      # Убираем nodeSelector - разрешаем запуск на любых узлах
-      # nodeSelector:
-      #   node-role.kubernetes.io/control-plane: ""
-      # Убираем сложный initContainer - будем использовать простой подход
       containers:
       - name: devops-app
         image: node:18-alpine
         imagePullPolicy: IfNotPresent
+        workingDir: /app
         command: ["sh"]
         args:
         - -c
         - |
-          # Установка зависимостей и запуск приложения
+          # Устанавливаем git и клонируем репозиторий
           apk add --no-cache git
-          git clone https://github.com/sttewiee/bestdevops.git
-          cd bestdevops
+          git clone https://github.com/sttewiee/bestdevops.git /app
+          cd /app
+          # Устанавливаем зависимости и запускаем приложение
           npm install
-          npm start
+          npm start &
+          # Держим контейнер живым
+          tail -f /dev/null
         ports:
         - containerPort: 8080
         env:
@@ -46,10 +46,10 @@ spec:
               fieldPath: spec.nodeName
         resources:
           requests:
-            memory: "64Mi"
+            memory: "256Mi"
             cpu: "250m"
           limits:
-            memory: "128Mi"
+            memory: "512Mi"
             cpu: "500m"
         livenessProbe:
           httpGet:
@@ -63,4 +63,3 @@ spec:
             port: 8080
           initialDelaySeconds: 20
           periodSeconds: 5
-      # Убираем volumes - они больше не нужны

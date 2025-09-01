@@ -3,17 +3,32 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const os = require('os');
-const k8s = require('@kubernetes/client-node');
+// const k8s = require('@kubernetes/client-node'); // Commented out - ES Module issue
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Kubernetes client
-const kc = new k8s.KubeConfig();
-kc.loadFromDefault();
-const k8sApi = kc.makeApiClient(k8s.CoreV1Api);
-const k8sAppsApi = kc.makeApiClient(k8s.AppsV1Api);
+// Kubernetes client - will be initialized dynamically
+let k8sApi = null;
+let k8sAppsApi = null;
+
+// Initialize Kubernetes client
+async function initK8s() {
+  try {
+    const k8s = await import('@kubernetes/client-node');
+    const kc = new k8s.KubeConfig();
+    kc.loadFromDefault();
+    k8sApi = kc.makeApiClient(k8s.CoreV1Api);
+    k8sAppsApi = kc.makeApiClient(k8s.AppsV1Api);
+    console.log('✅ Kubernetes client initialized successfully');
+  } catch (error) {
+    console.log('⚠️ Kubernetes client not available:', error.message);
+  }
+}
+
+// Initialize K8s client on startup
+initK8s();
 
 // Middleware
 app.use(helmet());
@@ -149,174 +164,202 @@ app.get('/api/system', (req, res) => {
 // Kubernetes API endpoints
 app.get('/api/cluster', async (req, res) => {
   try {
-    const nodesResponse = await k8sApi.listNode();
-    const nodes = nodesResponse.body.items.map(node => ({
-      name: node.metadata.name,
-      status: node.status.conditions.find(c => c.type === 'Ready')?.status || 'Unknown',
-      version: node.status.nodeInfo.kubeletVersion,
-      os: node.status.nodeInfo.osImage,
-      architecture: node.status.nodeInfo.architecture,
-      addresses: node.status.addresses,
-      allocatable: node.status.allocatable,
-      capacity: node.status.capacity
-    }));
-    
+    if (!k8sApi) {
+      return res.status(503).json({
+        error: 'Kubernetes client not available',
+        message: 'Kubernetes client is still initializing or not available'
+      });
+    }
+
+    const [nodesResponse, versionResponse] = await Promise.all([
+      k8sApi.listNode(),
+      k8sApi.getAPIResources()
+    ]);
+
     res.json({
-      cluster: {
-        totalNodes: nodes.length,
-        readyNodes: nodes.filter(n => n.status === 'True').length,
-        version: nodes[0]?.version || 'Unknown'
-      },
-      nodes,
+      nodes: nodesResponse.body.items.length,
+      nodeNames: nodesResponse.body.items.map(node => node.metadata.name),
+      kubernetesVersion: versionResponse.body.groupVersion || 'Unknown',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch cluster info', message: error.message });
+    res.status(500).json({
+      error: 'Failed to fetch cluster info',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
 app.get('/api/nodes', async (req, res) => {
   try {
+    if (!k8sApi) {
+      return res.status(503).json({
+        error: 'Kubernetes client not available',
+        message: 'Kubernetes client is still initializing or not available'
+      });
+    }
+
     const response = await k8sApi.listNode();
     const nodes = response.body.items.map(node => ({
       name: node.metadata.name,
       status: node.status.conditions.find(c => c.type === 'Ready')?.status || 'Unknown',
-      version: node.status.nodeInfo.kubeletVersion,
-      os: node.status.nodeInfo.osImage,
-      roles: Object.keys(node.metadata.labels).filter(label => label.includes('node-role')),
-      addresses: node.status.addresses,
-      resources: {
-        allocatable: node.status.allocatable,
-        capacity: node.status.capacity
-      },
-      conditions: node.status.conditions
+      roles: Object.keys(node.metadata.labels || {}).filter(label => label.includes('node-role')),
+      kubeletVersion: node.status.nodeInfo?.kubeletVersion || 'Unknown',
+      os: node.status.nodeInfo?.operatingSystem || 'Unknown',
+      architecture: node.status.nodeInfo?.architecture || 'Unknown',
+      capacity: node.status.capacity || {},
+      allocatable: node.status.allocatable || {}
     }));
-    
-    res.json({ nodes, timestamp: new Date().toISOString() });
+
+    res.json({
+      nodes,
+      count: nodes.length,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch nodes', message: error.message });
+    res.status(500).json({
+      error: 'Failed to fetch nodes info',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
 app.get('/api/pods', async (req, res) => {
   try {
-    const namespace = req.query.namespace || '';
-    const response = namespace 
-      ? await k8sApi.listNamespacedPod(namespace)
-      : await k8sApi.listPodForAllNamespaces();
+    if (!k8sApi) {
+      return res.status(503).json({
+        error: 'Kubernetes client not available',
+        message: 'Kubernetes client is still initializing or not available'
+      });
+    }
+
+    const namespace = req.query.namespace || 'all';
+    let response;
     
+    if (namespace === 'all') {
+      response = await k8sApi.listPodForAllNamespaces();
+    } else {
+      response = await k8sApi.listNamespacedPod(namespace);
+    }
+
     const pods = response.body.items.map(pod => ({
       name: pod.metadata.name,
       namespace: pod.metadata.namespace,
       status: pod.status.phase,
+      ready: pod.status.containerStatuses?.filter(c => c.ready).length || 0,
+      total: pod.status.containerStatuses?.length || 0,
       node: pod.spec.nodeName,
       ip: pod.status.podIP,
-      ready: pod.status.containerStatuses?.every(c => c.ready) || false,
-      restarts: pod.status.containerStatuses?.reduce((sum, c) => sum + c.restartCount, 0) || 0,
-      age: Math.floor((Date.now() - new Date(pod.metadata.creationTimestamp).getTime()) / 1000),
-      labels: pod.metadata.labels,
-      containers: pod.spec.containers.map(c => ({
-        name: c.name,
-        image: c.image,
-        ports: c.ports || []
-      }))
+      restartCount: pod.status.containerStatuses?.[0]?.restartCount || 0,
+      age: new Date(pod.metadata.creationTimestamp).toISOString()
     }));
-    
-    res.json({ 
-      namespace: namespace || 'all',
-      totalPods: pods.length,
-      runningPods: pods.filter(p => p.status === 'Running').length,
-      pods, 
-      timestamp: new Date().toISOString() 
+
+    res.json({
+      pods,
+      count: pods.length,
+      namespace: namespace === 'all' ? 'all' : namespace,
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch pods', message: error.message });
+    res.status(500).json({
+      error: 'Failed to fetch pods info',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
 app.get('/api/services', async (req, res) => {
   try {
-    const namespace = req.query.namespace || '';
-    const response = namespace 
-      ? await k8sApi.listNamespacedService(namespace)
-      : await k8sApi.listServiceForAllNamespaces();
+    if (!k8sApi) {
+      return res.status(503).json({
+        error: 'Kubernetes client not available',
+        message: 'Kubernetes client is still initializing or not available'
+      });
+    }
+
+    const namespace = req.query.namespace || 'all';
+    let response;
     
-    const services = response.body.items.map(svc => ({
-      name: svc.metadata.name,
-      namespace: svc.metadata.namespace,
-      type: svc.spec.type,
-      clusterIP: svc.spec.clusterIP,
-      ports: svc.spec.ports,
-      selector: svc.spec.selector,
-      externalIPs: svc.spec.externalIPs || [],
-      loadBalancer: svc.status.loadBalancer || {}
+    if (namespace === 'all') {
+      response = await k8sApi.listServiceForAllNamespaces();
+    } else {
+      response = await k8sApi.listNamespacedService(namespace);
+    }
+
+    const services = response.body.items.map(service => ({
+      name: service.metadata.name,
+      namespace: service.metadata.namespace,
+      type: service.spec.type,
+      clusterIP: service.spec.clusterIP,
+      ports: service.spec.ports?.map(p => ({
+        port: p.port,
+        targetPort: p.targetPort,
+        protocol: p.protocol
+      })) || [],
+      selector: service.spec.selector || {},
+      age: new Date(service.metadata.creationTimestamp).toISOString()
     }));
-    
-    res.json({ 
-      namespace: namespace || 'all',
-      services, 
-      timestamp: new Date().toISOString() 
+
+    res.json({
+      services,
+      count: services.length,
+      namespace: namespace === 'all' ? 'all' : namespace,
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch services', message: error.message });
+    res.status(500).json({
+      error: 'Failed to fetch services info',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
 app.get('/api/infrastructure', async (req, res) => {
   try {
-    // Get all infrastructure info in one call
-    const [nodesResponse, podsResponse, servicesResponse] = await Promise.all([
-      k8sApi.listNode(),
-      k8sApi.listPodForAllNamespaces(),
-      k8sApi.listServiceForAllNamespaces()
-    ]);
-    
-    const infrastructure = {
-      cluster: {
-        totalNodes: nodesResponse.body.items.length,
-        readyNodes: nodesResponse.body.items.filter(n => 
-          n.status.conditions.find(c => c.type === 'Ready')?.status === 'True'
-        ).length,
-        version: nodesResponse.body.items[0]?.status.nodeInfo.kubeletVersion || 'Unknown'
-      },
-      pods: {
-        total: podsResponse.body.items.length,
-        running: podsResponse.body.items.filter(p => p.status.phase === 'Running').length,
-        pending: podsResponse.body.items.filter(p => p.status.phase === 'Pending').length,
-        failed: podsResponse.body.items.filter(p => p.status.phase === 'Failed').length
-      },
-      services: {
-        total: servicesResponse.body.items.length,
-        clusterIP: servicesResponse.body.items.filter(s => s.spec.type === 'ClusterIP').length,
-        nodePort: servicesResponse.body.items.filter(s => s.spec.type === 'NodePort').length,
-        loadBalancer: servicesResponse.body.items.filter(s => s.spec.type === 'LoadBalancer').length
-      },
-      devopsTools: [
-        { name: 'Terraform', status: 'configured', category: 'IaC' },
-        { name: 'Kubernetes', status: 'active', category: 'Orchestration' },
-        { name: 'Docker', status: 'running', category: 'Containerization' },
-        { name: 'GitHub Actions', status: 'automated', category: 'CI/CD' },
-        { name: 'nginx', status: 'running', category: 'Web Server' }
-      ],
-      currentPod: {
-        hostname: os.hostname(),
-        platform: os.platform(),
-        arch: os.arch(),
-        cpus: os.cpus().length,
-        memory: {
-          total: Math.round(os.totalmem() / 1024 / 1024),
-          free: Math.round(os.freemem() / 1024 / 1024),
-          used: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024)
-        },
-        uptime: Math.round(os.uptime()),
-        loadAverage: os.loadavg()
-      },
-      timestamp: new Date().toISOString()
+    const localInfo = {
+      hostname: os.hostname(),
+      platform: `${os.platform()} ${os.arch()}`,
+      cpus: os.cpus().length,
+      memory: Math.round(os.totalmem() / 1024 / 1024),
+      uptime: Math.round(os.uptime()),
+      nodeName: process.env.KUBERNETES_NODE_NAME || 'Unknown'
     };
-    
-    res.json(infrastructure);
+
+    let k8sInfo = null;
+    if (k8sApi && k8sAppsApi) {
+      try {
+        const [nodesResponse, podsResponse, servicesResponse] = await Promise.all([
+          k8sApi.listNode(),
+          k8sApi.listPodForAllNamespaces(),
+          k8sApi.listServiceForAllNamespaces()
+        ]);
+
+        k8sInfo = {
+          nodes: nodesResponse.body.items.length,
+          pods: podsResponse.body.items.length,
+          services: servicesResponse.body.items.length,
+          nodeNames: nodesResponse.body.items.map(node => node.metadata.name)
+        };
+      } catch (k8sError) {
+        console.log('Kubernetes info fetch failed:', k8sError.message);
+      }
+    }
+
+    res.json({
+      local: localInfo,
+      kubernetes: k8sInfo,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch infrastructure', message: error.message });
+    res.status(500).json({
+      error: 'Failed to fetch infrastructure info',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -343,9 +386,8 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 DevOps Lab Dashboard running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔧 API status: http://localhost:${PORT}/api/status`);
-  console.log(`🖥️  System info: http://localhost:${PORT}/api/system`);
-  console.log(`🛠️  DevOps tools: http://localhost:${PORT}/api/devops-tools`);
+  console.log(`🔧 API endpoints: http://localhost:${PORT}/api/`);
+  console.log(`🖥️  Dashboard: http://localhost:${PORT}/`);
 });
 
 module.exports = app;
