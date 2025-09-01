@@ -17,42 +17,23 @@ spec:
       serviceAccountName: devops-app-sa
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""  # Запускаем на control plane узле
-      initContainers:
-      - name: build-image
-        image: docker:20.10-dind
+      # Убираем сложный initContainer - будем использовать простой подход
+      containers:
+      - name: devops-app
+        image: node:18-alpine  # ← Используем готовый образ Node.js
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
         command: ["sh"]
         args:
         - -c
         - |
-          # Ждем запуска Docker daemon
-          sleep 10
-          
-          # Клонируем репозиторий
+          # Устанавливаем зависимости и запускаем приложение
           apk add --no-cache git
           git clone https://github.com/sttewiee/bestdevops.git
           cd bestdevops
-          
-          # Собираем образ
-          docker build -t devops-app:latest .
-          echo "✅ Docker образ собран успешно"
-        env:
-        - name: DOCKER_HOST
-          value: "tcp://localhost:2375"
-        - name: DOCKER_DRIVER
-          value: "overlay2"
-        - name: DOCKER_TLS_CERTDIR
-          value: ""
-        securityContext:
-          privileged: true
-        volumeMounts:
-        - name: docker-sock
-          mountPath: /var/run/docker.sock
-      containers:
-      - name: devops-app
-        image: devops-app:latest  # ← Используем локальный образ
-        imagePullPolicy: Never   # ← Не пытаемся загружать из registry
-        ports:
-        - containerPort: 8080
+          npm install
+          npm start
         env:
         - name: HOSTNAME
           valueFrom:
@@ -92,7 +73,4 @@ spec:
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5
-      volumes:
-      - name: docker-sock
-        hostPath:
-          path: /var/run/docker.sock
+      # Убираем volumes - они больше не нужны
