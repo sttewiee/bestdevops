@@ -15,8 +15,9 @@ spec:
         app: devops-app
     spec:
       serviceAccountName: devops-app-sa
-      nodeSelector:
-        node-role.kubernetes.io/control-plane: ""  # Запускаем на control plane узле
+      # Убираем nodeSelector - разрешаем запуск на любых узлах
+      # nodeSelector:
+      #   node-role.kubernetes.io/control-plane: ""
       # Убираем сложный initContainer - будем использовать простой подход
       containers:
       - name: devops-app
