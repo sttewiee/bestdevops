@@ -21,11 +21,29 @@ spec:
       # Убираем сложный initContainer - будем использовать простой подход
       containers:
       - name: devops-app
-        image: nginx:alpine  # ← Используем простой nginx для тестирования
+        image: node:18-alpine
         imagePullPolicy: IfNotPresent
+        command: ["sh"]
+        args:
+        - -c
+        - |
+          # Установка зависимостей и запуск приложения
+          apk add --no-cache git
+          git clone https://github.com/sttewiee/bestdevops.git
+          cd bestdevops
+          npm install
+          npm start
         ports:
-        - containerPort: 80
-        # Убираем переменные окружения для nginx
+        - containerPort: 8080
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "8080"
+        - name: KUBERNETES_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         resources:
           requests:
             memory: "64Mi"
@@ -35,14 +53,14 @@ spec:
             cpu: "500m"
         livenessProbe:
           httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 10
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
+            path: /health
+            port: 8080
+          initialDelaySeconds: 20
           periodSeconds: 5
       # Убираем volumes - они больше не нужны
