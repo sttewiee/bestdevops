@@ -26,7 +26,7 @@ spec:
         - |
           # Устанавливаем git и клонируем репозиторий
           apk add --no-cache git
-          git clone https://github.com/sttewiee/bestdevops.git /app
+          git clone https://github.com/sttewiee/devops-lab.git /app
           cd /app
           # Устанавливаем зависимости и запускаем приложение
           npm install
